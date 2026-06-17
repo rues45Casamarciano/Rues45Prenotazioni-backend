@@ -1,6 +1,7 @@
 const express = require('express');
 const QRCode = require('qrcode');
-const puppeteer = require('puppeteer');
+const puppeteer = require('puppeteer-core');
+const chromium = require('@sparticuz/chromium');
 const cors = require('cors');
 const axios = require('axios');
 
@@ -128,12 +129,9 @@ app.post('/api/prenota', async (req, res) => {
         `;
 
         const browser = await puppeteer.launch({
-            headless: true,
-            args: [
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage'
-            ]
+            args: chromium.args,
+            executablePath: await chromium.executablePath(),
+            headless: chromium.headless
         });
 
         const page = await browser.newPage();
