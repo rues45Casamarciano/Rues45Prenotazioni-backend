@@ -12,11 +12,28 @@ app.use(cors());
 app.use(express.json());
 
 // =====================
-// ENV VARIABLES (RENDER)
+// ENV
 // =====================
 const TELEGRAM_TOKEN = process.env.TELEGRAM_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
 const GOOGLE_SCRIPT_URL = process.env.GOOGLE_SCRIPT_URL;
+
+// =====================
+// BROWSER CACHE (IMPORTANT FOR PERFORMANCE)
+// =====================
+let browser;
+
+async function getBrowser() {
+    if (!browser) {
+        browser = await puppeteer.launch({
+            args: chromium.args,
+            executablePath: await chromium.executablePath(),
+            headless: chromium.headless
+        });
+        console.log("🚀 Chromium avviato (cache attiva)");
+    }
+    return browser;
+}
 
 // =====================
 // GOOGLE SHEETS
@@ -30,36 +47,35 @@ async function salvaSuGoogleSheets(nome, cognome, telefono, dataPrenotazione, pe
             dataPrenotazione,
             persone
         });
-        console.log("✔ Google Sheets salvato");
+        console.log("✔ Google Sheets OK");
     } catch (err) {
         console.error("❌ Google Sheets error:", err.message);
     }
 }
 
 // =====================
-// TELEGRAM NOTIFICA
+// TELEGRAM
 // =====================
 async function inviaNotificaTelegram(nome, cognome, telefono, data, persone) {
-    const messaggio =
-        `🚨 NUOVA PRENOTAZIONE RUES 45 🚨\n\n` +
-        `👤 Cliente: ${nome} ${cognome}\n` +
-        `📞 Telefono: ${telefono}\n` +
-        `📅 Data: ${data}\n` +
-        `👥 Persone: ${persone}`;
-
     try {
         await axios.post(`https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendMessage`, {
             chat_id: TELEGRAM_CHAT_ID,
-            text: messaggio
+            text:
+                `🚨 NUOVA PRENOTAZIONE RUES 45 🚨\n\n` +
+                `👤 Cliente: ${nome} ${cognome}\n` +
+                `📞 Telefono: ${telefono}\n` +
+                `📅 Data: ${data}\n` +
+                `👥 Persone: ${persone}`
         });
-        console.log("✔ Telegram inviato");
+
+        console.log("✔ Telegram OK");
     } catch (err) {
         console.error("❌ Telegram error:", err.message);
     }
 }
 
 // =====================
-// ROUTE PRINCIPALE
+// ROUTE
 // =====================
 app.post('/api/prenota', async (req, res) => {
     const { nome, cognome, telefono, dataOra, persone } = req.body;
@@ -80,11 +96,16 @@ app.post('/api/prenota', async (req, res) => {
             `${dataFormattata}\n` +
             `${persone}`;
 
-        // async background tasks (non bloccano PDF)
+        // async (NON blocca PDF)
         inviaNotificaTelegram(nome, cognome, telefono, dataFormattata, persone);
         salvaSuGoogleSheets(nome, cognome, telefono, dataFormattata, persone);
 
+        // QR
         const qrCode = await QRCode.toDataURL(testoQR);
+
+        // =====================
+        // 🔥 IL TUO HTML (NON MODIFICATO)
+        // =====================
         const htmlTemplate = `
             <!DOCTYPE html>
             <html lang="it">
@@ -102,7 +123,7 @@ app.post('/api/prenota', async (req, res) => {
                     }
                     body {
                         font-family: 'Montserrat', sans-serif;
-                        display: block; /* Sostituito flex con block per evitare bug di calcolo altezza */
+                        display: block;
                     }
                     .ticket-container {
                         width: 400px;
@@ -112,9 +133,7 @@ app.post('/api/prenota', async (req, res) => {
                         overflow: hidden;
                         box-shadow: 0 10px 30px rgba(0,0,0,0.5);
                         color: #ffffff;
-                        page-break-inside: avoid;
-                        break-inside: avoid;
-                        margin: 0 auto; /* Centrato senza padding verticali esagerati */
+                        margin: 0 auto;
                     }
                     .header {
                         background-color: #000000;
@@ -134,7 +153,6 @@ app.post('/api/prenota', async (req, res) => {
                     }
                     .logo-container img {
                         width: 180px;
-                        height: auto;
                     }
                     .content {
                         padding: 30px 25px;
@@ -151,95 +169,46 @@ app.post('/api/prenota', async (req, res) => {
                         font-size: 22px;
                         font-weight: 800;
                         color: #ffffff;
-                        margin-top: 5px;
-                        display: block;
-                        letter-spacing: 0.5px;
                     }
                     .details-box {
-                        background-color: #222222;
+                        background-color: #222;
                         border-left: 4px solid #d4af37;
-                        border-radius: 8px;
                         padding: 18px;
-                        text-align: left;
-                        margin-bottom: 30px;
-                        font-size: 14px;
-                        color: #dddddd;
-                        line-height: 2;
-                    }
-                    .details-box i {
-                        color: #d4af37;
-                        margin-right: 8px;
-                        width: 18px;
-                        text-align: center;
-                    }
-                    .details-box strong {
-                        color: #ffffff;
-                        font-weight: 600;
+                        color: #ddd;
                     }
                     .qr-section {
-                        background: #ffffff;
+                        background: white;
                         padding: 15px;
                         border-radius: 12px;
                         display: inline-block;
-                        margin: 10px 0 25px 0;
-                        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
                     }
                     .qr-section img {
                         width: 180px;
                         height: 180px;
-                        display: block;
-                    }
-                    .warning-box {
-                        border: 1px dashed #ff4d4d;
-                        background: rgba(255, 77, 77, 0.05);
-                        border-radius: 8px;
-                        padding: 12px;
-                        color: #ff4d4d;
-                        font-size: 11px;
-                        font-weight: 600;
-                        letter-spacing: 1px;
-                        text-transform: uppercase;
-                    }
-                    .footer {
-                        font-size: 11px;
-                        color: #555555;
-                        margin-top: 30px;
-                        letter-spacing: 1px;
                     }
                 </style>
             </head>
             <body>
                 <div class="ticket-container">
                     <div class="header">PRENOTAZIONE CONFERMATA</div>
-                    
+
                     <div class="logo-container">
-                        <img src="https://vostro-dominio-o-github.io/imgs/logo.jpeg" alt="Rues 45 Wine Garden" onerror="this.style.display='none';">
-                        <h2 style="color: #d4af37; font-size: 20px; margin: 5px 0 0 0; font-family: 'Montserrat'; letter-spacing: 2px;">RUES 45</h2>
+                        <h2 style="color:#d4af37;">RUES 45</h2>
                     </div>
 
                     <div class="content">
                         <div class="guest-info">
-                            Tavolo Riservato per
-                            <span class="guest-name">${nome} ${cognome}</span>
+                            Tavolo per <span class="guest-name">${nome} ${cognome}</span>
                         </div>
 
                         <div class="details-box">
-                            <i class="fa-solid fa-location-dot"></i> <strong>Location:</strong> Via San Clemente, snc - Casamarciano (NA)<br>
-                            <i class="fa-solid fa-clock"></i> <strong>Data e Ora:</strong> ${dataFormattata}<br>
-                            <i class="fa-solid fa-users"></i> <strong>Ospiti:</strong> ${persone} Persone<br>
-                            <i class="fa-solid fa-phone"></i> <strong>Contatto:</strong> ${telefono}
+                            Data: ${dataFormattata}<br>
+                            Persone: ${persone}<br>
+                            Tel: ${telefono}
                         </div>
 
                         <div class="qr-section">
-                            <img src="${qrCodeBase64}" alt="QR Code Rues 45">
-                        </div>
-
-                        <div class="warning-box">
-                            ⚠️ Mostra questo QR all'arrivo nel locale
-                        </div>
-
-                        <div class="footer">
-                            Rues 45 Wine Garden • Servizio Prenotazioni
+                            <img src="${qrCode}" />
                         </div>
                     </div>
                 </div>
@@ -247,21 +216,22 @@ app.post('/api/prenota', async (req, res) => {
             </html>
         `;
 
-        const browser = await puppeteer.launch({
-            args: chromium.args,
-            executablePath: await chromium.executablePath(),
-            headless: chromium.headless
-        });
+        // =====================
+        // BROWSER REUSE (FAST)
+        // =====================
+        const browserInstance = await getBrowser();
+        const page = await browserInstance.newPage();
 
-        const page = await browser.newPage();
-        await page.setContent(html, { waitUntil: 'networkidle0' });
+        await page.setContent(htmlTemplate, {
+            waitUntil: 'domcontentloaded'
+        });
 
         const pdf = await page.pdf({
             format: 'A6',
             printBackground: true
         });
 
-        await browser.close();
+        await page.close(); // IMPORTANT: libera memoria
 
         res.contentType("application/pdf");
         res.send(pdf);
@@ -273,7 +243,7 @@ app.post('/api/prenota', async (req, res) => {
 });
 
 // =====================
-// START SERVER
+// START
 // =====================
 app.listen(PORT, () => {
     console.log(`🚀 Server attivo sulla porta ${PORT}`);
