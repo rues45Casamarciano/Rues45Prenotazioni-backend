@@ -80,6 +80,13 @@ async function inviaNotificaTelegram(nome, cognome, telefono, data, persone) {
 app.post('/api/prenota', async (req, res) => {
     const { nome, cognome, telefono, dataOra, persone } = req.body;
 
+    const dataScelta = new Date(dataOra);
+    const adesso = new Date();
+
+    if (dataScelta < adesso) {
+        return res.status(400).send("Non è possibile prenotare in una data passata.");
+    }
+
     try {
         const dataFormattata = new Date(dataOra).toLocaleString('it-IT', {
             day: '2-digit',
@@ -123,7 +130,7 @@ app.post('/api/prenota', async (req, res) => {
                     }
                     body {
                         font-family: 'Montserrat', sans-serif;
-                        display: block;
+                        display: block; /* Sostituito flex con block per evitare bug di calcolo altezza */
                     }
                     .ticket-container {
                         width: 400px;
@@ -133,7 +140,9 @@ app.post('/api/prenota', async (req, res) => {
                         overflow: hidden;
                         box-shadow: 0 10px 30px rgba(0,0,0,0.5);
                         color: #ffffff;
-                        margin: 0 auto;
+                        page-break-inside: avoid;
+                        break-inside: avoid;
+                        margin: 0 auto; /* Centrato senza padding verticali esagerati */
                     }
                     .header {
                         background-color: #000000;
@@ -153,6 +162,7 @@ app.post('/api/prenota', async (req, res) => {
                     }
                     .logo-container img {
                         width: 180px;
+                        height: auto;
                     }
                     .content {
                         padding: 30px 25px;
@@ -169,46 +179,95 @@ app.post('/api/prenota', async (req, res) => {
                         font-size: 22px;
                         font-weight: 800;
                         color: #ffffff;
+                        margin-top: 5px;
+                        display: block;
+                        letter-spacing: 0.5px;
                     }
                     .details-box {
-                        background-color: #222;
+                        background-color: #222222;
                         border-left: 4px solid #d4af37;
+                        border-radius: 8px;
                         padding: 18px;
-                        color: #ddd;
+                        text-align: left;
+                        margin-bottom: 30px;
+                        font-size: 14px;
+                        color: #dddddd;
+                        line-height: 2;
+                    }
+                    .details-box i {
+                        color: #d4af37;
+                        margin-right: 8px;
+                        width: 18px;
+                        text-align: center;
+                    }
+                    .details-box strong {
+                        color: #ffffff;
+                        font-weight: 600;
                     }
                     .qr-section {
-                        background: white;
+                        background: #ffffff;
                         padding: 15px;
                         border-radius: 12px;
                         display: inline-block;
+                        margin: 10px 0 25px 0;
+                        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
                     }
                     .qr-section img {
                         width: 180px;
                         height: 180px;
+                        display: block;
+                    }
+                    .warning-box {
+                        border: 1px dashed #ff4d4d;
+                        background: rgba(255, 77, 77, 0.05);
+                        border-radius: 8px;
+                        padding: 12px;
+                        color: #ff4d4d;
+                        font-size: 11px;
+                        font-weight: 600;
+                        letter-spacing: 1px;
+                        text-transform: uppercase;
+                    }
+                    .footer {
+                        font-size: 11px;
+                        color: #555555;
+                        margin-top: 30px;
+                        letter-spacing: 1px;
                     }
                 </style>
             </head>
             <body>
                 <div class="ticket-container">
                     <div class="header">PRENOTAZIONE CONFERMATA</div>
-
+                    
                     <div class="logo-container">
-                        <h2 style="color:#d4af37;">RUES 45</h2>
+                        <img src="https://vostro-dominio-o-github.io/imgs/logo.jpeg" alt="Rues 45 Wine Garden" onerror="this.style.display='none';">
+                        <h2 style="color: #d4af37; font-size: 20px; margin: 5px 0 0 0; font-family: 'Montserrat'; letter-spacing: 2px;">RUES 45</h2>
                     </div>
 
                     <div class="content">
                         <div class="guest-info">
-                            Tavolo per <span class="guest-name">${nome} ${cognome}</span>
+                            Tavolo Riservato per
+                            <span class="guest-name">${nome} ${cognome}</span>
                         </div>
 
                         <div class="details-box">
-                            Data: ${dataFormattata}<br>
-                            Persone: ${persone}<br>
-                            Tel: ${telefono}
+                            <i class="fa-solid fa-location-dot"></i> <strong>Location:</strong> Via San Clemente, snc - Casamarciano (NA)<br>
+                            <i class="fa-solid fa-clock"></i> <strong>Data e Ora:</strong> ${dataFormattata}<br>
+                            <i class="fa-solid fa-users"></i> <strong>Ospiti:</strong> ${persone} Persone<br>
+                            <i class="fa-solid fa-phone"></i> <strong>Contatto:</strong> ${telefono}
                         </div>
 
                         <div class="qr-section">
                             <img src="${qrCode}" />
+                        </div>
+
+                        <div class="warning-box">
+                            ⚠️ Mostra questo QR all'arrivo nel locale
+                        </div>
+
+                        <div class="footer">
+                            Rues 45 Wine Garden • Servizio Prenotazioni
                         </div>
                     </div>
                 </div>
