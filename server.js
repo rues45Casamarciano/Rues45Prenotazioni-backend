@@ -86,7 +86,7 @@ app.post('/api/prenota', async (req, res) => {
     if (dataScelta < adesso) {
         return res.status(400).send("Non è possibile prenotare in una data passata.");
     }
-
+    
     try {
         const dataFormattata = new Date(dataOra).toLocaleString('it-IT', {
             day: '2-digit',
@@ -130,7 +130,7 @@ app.post('/api/prenota', async (req, res) => {
                     }
                     body {
                         font-family: 'Montserrat', sans-serif;
-                        display: block; /* Sostituito flex con block per evitare bug di calcolo altezza */
+                        display: block;
                     }
                     .ticket-container {
                         width: 400px;
@@ -142,7 +142,7 @@ app.post('/api/prenota', async (req, res) => {
                         color: #ffffff;
                         page-break-inside: avoid;
                         break-inside: avoid;
-                        margin: 0 auto; /* Centrato senza padding verticali esagerati */
+                        margin: 0 auto;
                     }
                     .header {
                         background-color: #000000;
@@ -259,7 +259,7 @@ app.post('/api/prenota', async (req, res) => {
                         </div>
 
                         <div class="qr-section">
-                            <img src="${qrCode}" />
+                            <img src="${qrCode}" alt="QR Code Rues 45">
                         </div>
 
                         <div class="warning-box">
@@ -273,7 +273,7 @@ app.post('/api/prenota', async (req, res) => {
                 </div>
             </body>
             </html>
-        `;
+            `;
 
         // =====================
         // BROWSER REUSE (FAST)
