@@ -48,6 +48,7 @@ async function getBrowser() {
 async function salvaSuGoogleSheets(nome, cognome, telefono, dataPrenotazione, persone) {
     try {
         await axios.post(GOOGLE_SCRIPT_URL, {
+            action: 'save',
             nome,
             cognome,
             telefono,
@@ -57,6 +58,46 @@ async function salvaSuGoogleSheets(nome, cognome, telefono, dataPrenotazione, pe
         console.log("✔ Google Sheets OK");
     } catch (err) {
         console.error("❌ Google Sheets error:", err.message);
+    }
+}
+
+// =====================
+// UTILITÀ DATI
+// =====================
+function formattaDataPrenotazionePerScript(data) {
+    const date = new Date(data);
+
+    if (Number.isNaN(date.getTime())) {
+        return '';
+    }
+
+    const giorno = String(date.getDate()).padStart(2, '0');
+    const mese = String(date.getMonth() + 1).padStart(2, '0');
+    const anno = date.getFullYear();
+    const ore = String(date.getHours()).padStart(2, '0');
+    const minuti = String(date.getMinutes()).padStart(2, '0');
+
+    return `${giorno}/${mese}/${anno}, ${ore}:${minuti}`;
+}
+
+async function verificaDuplicatoPrenotazione(telefono, dataOra) {
+    try {
+        const response = await axios.post(GOOGLE_SCRIPT_URL, {
+            action: 'check',
+            telefono: String(telefono).trim(),
+            dataPrenotazione: formattaDataPrenotazionePerScript(dataOra)
+        });
+
+        const data = response.data || {};
+
+        return {
+            duplicato: Boolean(data.isDuplicate),
+            stessoSlot: Boolean(data.isSameSlot),
+            risposta: data
+        };
+    } catch (err) {
+        console.error("❌ Duplicate check error:", err.message);
+        throw new Error('Impossibile verificare duplicati in questo momento.');
     }
 }
 
@@ -148,6 +189,17 @@ app.post('/api/prenota', async (req, res) => {
     }
     
     try {
+        const duplicato = await verificaDuplicatoPrenotazione(telefono, dataOra);
+
+        if (duplicato.duplicato) {
+            return res.status(409).json({
+                error: 'DUPLICATE_BOOKING',
+                message: duplicato.stessoSlot
+                    ? 'Hai già una prenotazione per questo stesso slot. Se vuoi modificare i coperti, contatta il locale.'
+                    : 'Hai già una prenotazione futura attiva con questo numero di telefono.'
+            });
+        }
+
         const dataFormattata = validazione.selectedDate.toLocaleString('it-IT', {
             day: '2-digit',
             month: '2-digit',
@@ -171,7 +223,7 @@ app.post('/api/prenota', async (req, res) => {
         const qrCode = await QRCode.toDataURL(testoQR);
 
         // =====================
-        // 🔥 IL TUO HTML RISTRUTTURATO PER PAGINA SINGOLA
+        // HTML TEMPLATE
         // =====================
         const htmlTemplate = `
             <!DOCTYPE html>
