@@ -111,7 +111,7 @@ app.post('/api/prenota', async (req, res) => {
         const qrCode = await QRCode.toDataURL(testoQR);
 
         // =====================
-        // 🔥 IL TUO HTML (NON MODIFICATO)
+        // 🔥 IL TUO HTML RISTRUTTURATO PER PAGINA SINGOLA
         // =====================
         const htmlTemplate = `
             <!DOCTYPE html>
@@ -159,10 +159,6 @@ app.post('/api/prenota', async (req, res) => {
                         background: #000000;
                         padding: 25px 10px;
                         text-align: center;
-                    }
-                    .logo-container img {
-                        width: 180px;
-                        height: auto;
                     }
                     .content {
                         padding: 30px 25px;
@@ -241,8 +237,7 @@ app.post('/api/prenota', async (req, res) => {
                     <div class="header">PRENOTAZIONE CONFERMATA</div>
                     
                     <div class="logo-container">
-                        <img src="https://vostro-dominio-o-github.io/imgs/logo.jpeg" alt="Rues 45 Wine Garden" onerror="this.style.display='none';">
-                        <h2 style="color: #d4af37; font-size: 20px; margin: 5px 0 0 0; font-family: 'Montserrat'; letter-spacing: 2px;">RUES 45</h2>
+                        <h2 style="color: #d4af37; font-size: 24px; margin: 0; font-family: 'Montserrat'; letter-spacing: 3px; font-weight: 800;">RUES 45</h2>
                     </div>
 
                     <div class="content">
@@ -273,24 +268,39 @@ app.post('/api/prenota', async (req, res) => {
                 </div>
             </body>
             </html>
-            `;
+        `;
 
         // =====================
-        // BROWSER REUSE (FAST)
+        // BROWSER REUSE & CALCOLO MILLIMETRICO
         // =====================
         const browserInstance = await getBrowser();
         const page = await browserInstance.newPage();
 
-        await page.setContent(htmlTemplate, {
-            waitUntil: 'domcontentloaded'
+        // 1. Carichiamo l'HTML
+        await page.setContent(htmlTemplate, { waitUntil: 'domcontentloaded' });
+        
+        // 2. Forza Puppeteer ad aspettare che i font esterni siano caricati
+        await page.evaluateHandle('document.fonts.ready');
+
+        // 3. Calcola l'altezza reale del div contenitore
+        const dimensions = await page.evaluate(() => {
+            const ticket = document.querySelector('.ticket-container');
+            return {
+                width: ticket ? Math.ceil(ticket.getBoundingClientRect().width) : 400,
+                height: ticket ? Math.ceil(ticket.getBoundingClientRect().height) : 800
+            };
         });
 
+        // 4. Genera il PDF dinamico senza layout A6 rigido
         const pdf = await page.pdf({
-            format: 'A6',
-            printBackground: true
+            width: `${dimensions.width}px`,
+            height: `${dimensions.height + 20}px`, // 20px di margine di sicurezza
+            printBackground: true,
+            preferCSSPageSize: true,
+            margin: { top: '0px', right: '0px', bottom: '0px', left: '0px' }
         });
 
-        await page.close(); // IMPORTANT: libera memoria
+        await page.close();
 
         res.contentType("application/pdf");
         res.send(pdf);
