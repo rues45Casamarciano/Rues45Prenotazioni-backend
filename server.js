@@ -80,20 +80,46 @@ async function inviaNotificaTelegram(nome, cognome, telefono, data, persone) {
 app.post('/api/prenota', async (req, res) => {
     const { nome, cognome, telefono, dataOra, persone } = req.body;
 
-    const dataScelta = new Date(dataOra);
-    const adesso = new Date();
+    // -------------------------------------------------------------
+    // CONFIGURAZIONE VALIDAZIONE TEMPORALE
+    // -------------------------------------------------------------
+    const MINUTI_ANTICIPO_MINIMO = 60; // Modifica questo valore per cambiare il margine richiesto
 
-    if (dataScelta < adesso) {
-        return res.status(400).send("Non è possibile prenotare in una data passata.");
-    }
+    // Otteniamo il timestamp corrente del server
+    const adesso = new Date();
     
+    // Convertiamo la stringa "dataOra" ricevuta dal frontend in un oggetto Date
+    const dataScelta = new Date(dataOra);
+
+    // Controllo 1 & 2: La data scelta è nel passato o coincide esattamente con adesso?
+    if (dataScelta <= adesso) {
+        return res.status(400).send("Non è possibile prenotare in una data o un orario già trascorso.");
+    }
+
+    // Controllo 3: Calcolo del margine minimo di anticipo richiesto
+    const limiteMinimoSpesa = new Date(adesso.getTime() + MINUTI_ANTICIPO_MINIMO * 60 * 1000);
+
+    if (dataScelta < limiteMinimoSpesa) {
+        // Formattiamo l'orario minimo accettabile in formato locale italiano per renderlo chiaro all'utente
+        const orarioMinimoValido = limiteMinimoSpesa.toLocaleTimeString('it-IT', {
+            hour: '2-digit',
+            minute: '2-digit',
+            timeZone: 'Europe/Rome'
+        });
+        
+        return res.status(400).send(`Le prenotazioni richiedono un preavviso minimo di ${MINUTI_ANTICIPO_MINIMO} minuti. La prima prenotazione utile per oggi è a partire dalle ore ${orarioMinimoValido}.`);
+    }
+    // -------------------------------------------------------------
+
     try {
+        // Formattazione della data finale da stampare nel biglietto e inviare ai gestori
         const dataFormattata = new Date(dataOra).toLocaleString('it-IT', {
             day: '2-digit',
             month: '2-digit',
             year: 'numeric',
             hour: '2-digit',
-            minute: '2-digit'
+            minute: '2-digit',
+            timeZone: 'Europe/Rome'
         });
 
         const testoQR =
@@ -103,22 +129,21 @@ app.post('/api/prenota', async (req, res) => {
             `${dataFormattata}\n` +
             `${persone}`;
 
-        // async (NON blocca PDF)
+        // async (NON blocca il processo di rendering del PDF)
         inviaNotificaTelegram(nome, cognome, telefono, dataFormattata, persone);
         salvaSuGoogleSheets(nome, cognome, telefono, dataFormattata, persone);
 
-        // QR
+        // QR Code Generation
         const qrCode = await QRCode.toDataURL(testoQR);
 
         // =====================
-        // 🔥 IL TUO HTML RISTRUTTURATO PER PAGINA SINGOLA
+        // 🔥 HTML TICKET CON ICONE SVG INLINE (STABILI SU PUPPETEER)
         // =====================
         const htmlTemplate = `
             <!DOCTYPE html>
             <html lang="it">
             <head>
                 <meta charset="UTF-8">
-                <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
                 <style>
                     @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;600;800&display=swap');
                     
@@ -188,13 +213,19 @@ app.post('/api/prenota', async (req, res) => {
                         margin-bottom: 30px;
                         font-size: 14px;
                         color: #dddddd;
-                        line-height: 2;
+                        line-height: 2.2;
                     }
-                    .details-box i {
-                        color: #d4af37;
-                        margin-right: 8px;
-                        width: 18px;
-                        text-align: center;
+                    .details-row {
+                        display: block;
+                        margin-bottom: 5px;
+                    }
+                    .details-box svg {
+                        fill: #d4af37;
+                        margin-right: 10px;
+                        width: 16px;
+                        height: 16px;
+                        vertical-align: middle;
+                        display: inline-block;
                     }
                     .details-box strong {
                         color: #ffffff;
@@ -247,10 +278,22 @@ app.post('/api/prenota', async (req, res) => {
                         </div>
 
                         <div class="details-box">
-                            <i class="fa-solid fa-location-dot"></i> <strong>Location:</strong> Via San Clemente, snc - Casamarciano (NA)<br>
-                            <i class="fa-solid fa-clock"></i> <strong>Data e Ora:</strong> ${dataFormattata}<br>
-                            <i class="fa-solid fa-users"></i> <strong>Ospiti:</strong> ${persone} Persone<br>
-                            <i class="fa-solid fa-phone"></i> <strong>Contatto:</strong> ${telefono}
+                            <span class="details-row">
+                                <svg viewBox="0 0 384 512"><path d="M215.7 499.2C267 435 384 279.4 384 192C384 86 298 0 192 0S0 86 0 192c0 87.4 117 243 168.3 307.2c12.3 15.3 35.1 15.3 47.4 0zM192 128a64 64 0 1 1 0 128 64 64 0 1 1 0-128z"/></svg>
+                                <strong>Location:</strong> Via San Clemente, snc - Casamarciano (NA)
+                            </span>
+                            <span class="details-row">
+                                <svg viewBox="0 0 512 512"><path d="M256 0a256 256 0 1 1 0 512A256 256 0 1 1 256 0zM232 120V256c0 8 4.3 15.5 11.3 19.5l112 64c9.8 5.6 22.1 2.2 27.7-7.6s2.2-22.1-7.6-27.7L280 243.2V120c0-11.3-9.1-20-20-20s-20 8.7-20 20z"/></svg>
+                                <strong>Data e Ora:</strong> ${dataFormattata}
+                            </span>
+                            <span class="details-row">
+                                <svg viewBox="0 0 640 512"><path d="M144 0a80 80 0 1 1 0 160A80 80 0 1 1 144 0zM512 0a80 80 0 1 1 0 160A80 80 0 1 1 512 0zM0 298.1C0 244.9 43.1 201.8 96.3 201.8H191.7C244.9 201.8 288 244.9 288 298.1V352H0V298.1zM448 201.8H543.7C596.9 201.8 640 244.9 640 298.1V352H352V298.1c0-53.2 43.1-96.3 96.3-96.3zM288 432v16c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32V432c0-17.7 14.3-32 32-32H256c17.7 0 32 14.3 32 32zm352 0v16c0 17.7-14.3 32-32 32H384c-17.7 0-32-14.3-32-32V432c0-17.7 14.3-32 32-32H608c17.7 0 32 14.3 32 32z"/></svg>
+                                <strong>Ospiti:</strong> ${persone} Persone
+                            </span>
+                            <span class="details-row">
+                                <svg viewBox="0 0 512 512"><path d="M164.9 24.6c-7.7-18.6-28-28.5-47.4-23.2l-88 24C12.1 30.2 0 46 0 64C0 311.4 200.6 512 448 512c18 0 33.8-12.1 38.6-29.5l24-88c5.3-19.4-4.6-39.7-23.2-47.4l-96-40c-16.3-6.8-35.2-2.1-46.3 11.6L304.7 368C234.3 334.7 177.3 277.7 144 207.3L193.3 167c13.7-11.2 18.4-30 11.6-46.3l-40-96z"/></svg>
+                                <strong>Contatto:</strong> ${telefono}
+                            </span>
                         </div>
 
                         <div class="qr-section">
@@ -279,7 +322,7 @@ app.post('/api/prenota', async (req, res) => {
         // 1. Carichiamo l'HTML
         await page.setContent(htmlTemplate, { waitUntil: 'domcontentloaded' });
         
-        // 2. Forza Puppeteer ad aspettare che i font esterni siano caricati
+        // 2. Forza Puppeteer ad aspettare che i font esterni siano carichi
         await page.evaluateHandle('document.fonts.ready');
 
         // 3. Calcola l'altezza reale del div contenitore
@@ -291,10 +334,10 @@ app.post('/api/prenota', async (req, res) => {
             };
         });
 
-        // 4. Genera il PDF dinamico senza layout A6 rigido
+        // 4. Genera il PDF dinamico su misura singola pagina
         const pdf = await page.pdf({
             width: `${dimensions.width}px`,
-            height: `${dimensions.height + 20}px`, // 20px di margine di sicurezza
+            height: `${dimensions.height + 20}px`, // 20px di tolleranza di sicurezza
             printBackground: true,
             preferCSSPageSize: true,
             margin: { top: '0px', right: '0px', bottom: '0px', left: '0px' }
