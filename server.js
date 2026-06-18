@@ -390,6 +390,56 @@ function generateTicketHtml(nome, cognome, telefono, dataFormattata, persone, qr
 // ==========================================
 // ROUTE HANDLERS
 // ==========================================
+
+// NUOVA ROTTA: Analizza e mappa lo stato dei posti rimasti per l'intero giorno
+app.post('/api/verifica-giorno', async (req, res) => {
+    const { dataGiorno, persone } = req.body;
+
+    if (!dataGiorno || !persone) {
+        return res.status(400).json({ error: 'MISSING_PARAMETERS', message: 'I parametri dataGiorno e persone sono obbligatori.' });
+    }
+
+    try {
+        // Genera la lista degli slot da mappare (dalle 20:30 alle 23:30 a intervalli di 15 min)
+        const slotOrari = [
+            "20:30", "20:45", "21:00", "21:15", "21:30", "21:45", 
+            "22:00", "22:15", "22:30", "22:45", "23:00", "23:15", "23:30"
+        ];
+        const resocontoGiorno = {};
+        const numeroPersone Richieste = parseInt(persone, 10) || 1;
+
+        // Esegue le verifiche in parallelo per non rallentare l'interfaccia frontend
+        await Promise.all(slotOrari.map(async (ora) => {
+            const dataOraVirtuale = `${dataGiorno}T${ora}:00`;
+            
+            try {
+                // Sfrutta la funzione esistente. Passiamo un numero di telefono fittizio ("0000000000") 
+                // poiché in questa fase ci interessa esclusivamente l'oggetto "risposta" della capienza.
+                const controllo = await verificaDuplicatoPrenotazione("0000000000", dataOraVirtuale);
+                const capienza = controllo.risposta;
+
+                const postiRimasti = capienza.hasOwnProperty('availableSeatsRemaining') 
+                    ? parseInt(capienza.availableSeatsRemaining, 10) 
+                    : 0;
+
+                resocontoGiorno[ora] = {
+                    pieno: Boolean(capienza.isVenueFull),
+                    postiRimasti: postiRimasti,
+                    disponibilePerGruppo: !capienza.isVenueFull && (postiRimasti >= numeroPersoneRichieste)
+                };
+            } catch (err) {
+                // In caso di errore sul singolo slot, marchiamolo come non disponibile per sicurezza
+                resocontoGiorno[ora] = { pieno: true, postiRimasti: 0, disponibilePerGruppo: false };
+            }
+        }));
+
+        return res.json(resocontoGiorno);
+    } catch (globalErr) {
+        console.error('Errore globale mdf verifica-giorno:', globalErr.message);
+        return res.status(500).json({ error: 'INTERNAL_SERVER_ERROR' });
+    }
+});
+
 app.post('/api/prenota', async (req, res) => {
     const { nome, cognome, telefono, dataOra, persone } = req.body;
 
@@ -402,13 +452,25 @@ app.post('/api/prenota', async (req, res) => {
     }
     
     try {
-        const duplicato = await verificaDuplicatoPrenotazione(telefono, dataOra);
-        if (duplicato.duplicato) {
+        // Interroghiamo Google Script (che esegue in un colpo solo duplicati + controllo posti)
+        const controlloDatabase = await verificaDuplicatoPrenotazione(telefono, dataOra);
+        const infoCapacita = controlloDatabase.risposta;
+
+        // 1. CONTROLlo DUPLICATI
+        if (controlloDatabase.duplicato) {
             return res.status(409).json({
                 error: 'DUPLICATE_BOOKING',
-                message: duplicato.stessoSlot
+                message: controlloDatabase.stessoSlot
                     ? 'Hai già una prenotazione per questo stesso slot. Se vuoi modificare i coperti, contatta il locale.'
                     : 'Hai già una prenotazione futura attiva con questo numero di telefono.'
+            });
+        }
+
+        // 2. CONTROLLO DISPONIBILITÀ POSTI
+        if (infoCapacita.isVenueFull) {
+            return res.status(400).json({
+                error: 'VENUE_FULLY_BOOKED',
+                message: `Ci dispiace, non ci sono abbastanza posti disponibili per questo orario. Posti rimasti: ${infoCapacita.availableSeatsRemaining || 0}.`
             });
         }
 
@@ -427,28 +489,25 @@ app.post('/api/prenota', async (req, res) => {
             `${dataFormattata}\n` +
             `${persone}`;
 
-        // Fire-and-forget background integrations to optimize ticket generation speed
+        // Lancio delle integrazioni asincrone background
         inviaNotificaTelegram(nome, cognome, telefono, dataFormattata, persone);
         salvaSuGoogleSheets(nome, cognome, telefono, dataFormattata, persone);
 
-        // Generate QR code representation
+        // Generazione QR code
         const qrCode = await QRCode.toDataURL(testoQR);
 
-        // Fetch HTML template
+        // Generazione HTML template
         const htmlTemplate = generateTicketHtml(nome, cognome, telefono, dataFormattata, persone, qrCode);
 
-        // Initialize Puppeteer processing pipeline
+        // Pipeline di elaborazione Puppeteer
         const browserInstance = await getBrowser();
         const page = await browserInstance.newPage();
         let pdfBuffer;
 
         try {
             await page.setContent(htmlTemplate, { waitUntil: 'domcontentloaded' });
-            
-            // Wait for Google Montserrat web fonts optimization
             await page.evaluateHandle('document.fonts.ready');
 
-            // Compute dynamic height bounds of the rendered component
             const dimensions = await page.evaluate(() => {
                 const ticket = document.querySelector('.ticket-container');
                 return {
@@ -457,16 +516,14 @@ app.post('/api/prenota', async (req, res) => {
                 };
             });
 
-            // Perform headless viewport-to-PDF conversion metrics
             pdfBuffer = await page.pdf({
                 width: `${dimensions.width}px`,
-                height: `${dimensions.height + 20}px`, // 20px safety padding offset
+                height: `${dimensions.height + 20}px`,
                 printBackground: true,
                 preferCSSPageSize: true,
                 margin: { top: '0px', right: '0px', bottom: '0px', left: '0px' }
             });
         } finally {
-            // Guarantee page resource disposal regardless of execution path failures
             await page.close().catch((closeErr) => console.error('Error closing Puppeteer page instance:', closeErr.message));
         }
 
