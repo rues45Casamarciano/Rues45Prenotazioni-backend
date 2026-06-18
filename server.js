@@ -25,6 +25,13 @@ const MIN_ADVANCE_MINUTES = 60;
 const FIRST_ALLOWED_HOUR = 20;
 const FIRST_ALLOWED_MINUTE = 30;
 
+// NUOVE VARIABILI CONFIGURABILI PER GLI SLOT
+const SLOT_START_HOUR = 20;
+const SLOT_START_MINUTE = 30;
+const SLOT_END_HOUR = 23;
+const SLOT_END_MINUTE = 30;
+const SLOT_INCREMENT_MINUTES = 15; // <-- MODIFICA QUESTO PER CAMBIARE L'INCREMENTO (Es. 15, 30, 45)
+
 // ==========================================
 // BROWSER CACHE & INSTANCE MANAGEMENT
 // ==========================================
@@ -391,7 +398,7 @@ function generateTicketHtml(nome, cognome, telefono, dataFormattata, persone, qr
 // ROUTE HANDLERS
 // ==========================================
 
-// NUOVA ROTTA: Analizza e mappa lo stato dei posti rimasti per l'intero giorno
+// Analizza e mappa lo stato dei posti con generazione automatica degli slot
 app.post('/api/verifica-giorno', async (req, res) => {
     const { dataGiorno, persone } = req.body;
 
@@ -400,21 +407,34 @@ app.post('/api/verifica-giorno', async (req, res) => {
     }
 
     try {
-        // Genera la lista degli slot da mappare (dalle 20:30 alle 23:30 a intervalli di 15 min)
-        const slotOrari = [
-            "20:30", "20:45", "21:00", "21:15", "21:30", "21:45", 
-            "22:00", "22:15", "22:30", "22:45", "23:00", "23:15", "23:30"
-        ];
+        // GENERAZIONE DINAMICA DEGLI SLOT ORARI
+        const slotOrari = [];
+        let oraCorrente = SLOT_START_HOUR;
+        let minutoCorrente = SLOT_START_MINUTE;
+
+        const fineInMinuti = (SLOT_END_HOUR * 60) + SLOT_END_MINUTE;
+
+        while ((oraCorrente * 60) + minutoCorrente <= fineInMinuti) {
+            const oraFormattata = String(oraCorrente).padStart(2, '0');
+            const minutoFormattato = String(minutoCorrente).padStart(2, '0');
+            slotOrari.push(`${oraFormattata}:${minutoFormattato}`);
+
+            // Avanza del valore dell'incremento configurato
+            minutoCorrente += SLOT_INCREMENT_MINUTES;
+            if (minutoCorrente >= 60) {
+                oraCorrente += Math.floor(minutoCorrente / 60);
+                minutoCorrente = minutoCorrente % 60;
+            }
+        }
+
         const resocontoGiorno = {};
         const numeroPersoneRichieste = parseInt(persone, 10) || 1;
 
-        // Esegue le verifiche in parallelo per non rallentare l'interfaccia frontend
+        // Esegue le verifiche in parallelo
         await Promise.all(slotOrari.map(async (ora) => {
             const dataOraVirtuale = `${dataGiorno}T${ora}:00`;
             
             try {
-                // Sfrutta la funzione esistente. Passiamo un numero di telefono fittizio ("0000000000") 
-                // poiché in questa fase ci interessa esclusivamente l'oggetto "risposta" della capienza.
                 const controllo = await verificaDuplicatoPrenotazione("0000000000", dataOraVirtuale);
                 const capienza = controllo.risposta;
 
@@ -428,7 +448,6 @@ app.post('/api/verifica-giorno', async (req, res) => {
                     disponibilePerGruppo: !capienza.isVenueFull && (postiRimasti >= numeroPersoneRichieste)
                 };
             } catch (err) {
-                // In caso di errore sul singolo slot, marchiamolo come non disponibile per sicurezza
                 resocontoGiorno[ora] = { pieno: true, postiRimasti: 0, disponibilePerGruppo: false };
             }
         }));
