@@ -406,7 +406,7 @@ app.post('/api/verifica-giorno', async (req, res) => {
             "22:00", "22:15", "22:30", "22:45", "23:00", "23:15", "23:30"
         ];
         const resocontoGiorno = {};
-        const numeroPersone Richieste = parseInt(persone, 10) || 1;
+        const numeroPersoneRichieste = parseInt(persone, 10) || 1;
 
         // Esegue le verifiche in parallelo per non rallentare l'interfaccia frontend
         await Promise.all(slotOrari.map(async (ora) => {
